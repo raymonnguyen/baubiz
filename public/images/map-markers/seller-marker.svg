@@ -1,0 +1,18 @@
+<svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Pin shape with shadow -->
+  <filter id="shadow" x="-2" y="2" width="110%" height="110%">
+    <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.3"/>
+  </filter>
+  
+  <!-- Main pin body -->
+  <path d="M19 3C11.268 3 5 9.268 5 17C5 28 19 35 19 35C19 35 33 28 33 17C33 9.268 26.732 3 19 3Z" 
+        fill="#64748B" 
+        filter="url(#shadow)"/>
+  
+  <!-- Inner circle -->
+  <circle cx="19" cy="17" r="7" fill="white"/>
+  
+  <!-- Person icon -->
+  <path d="M19 14C17.9 14 17 14.9 17 16C17 17.1 17.9 18 19 18C20.1 18 21 17.1 21 16C21 14.9 20.1 14 19 14ZM19 19C16.33 19 14 20.17 14 22V22.5H24V22C24 20.17 21.67 19 19 19Z" 
+        fill="#64748B"/>
+</svg> 

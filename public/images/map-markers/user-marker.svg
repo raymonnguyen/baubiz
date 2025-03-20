@@ -1,0 +1,41 @@
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer circle with shadow -->
+  <filter id="shadow" x="-2" y="-2" width="110%" height="110%">
+    <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.3"/>
+  </filter>
+  
+  <!-- Outer pulse animation -->
+  <circle cx="18" cy="18" r="18" fill="#FF6B6B" opacity="0.2">
+    <animate 
+      attributeName="r" 
+      values="14;18" 
+      dur="1.5s" 
+      repeatCount="indefinite" 
+    />
+    <animate 
+      attributeName="opacity" 
+      values="0.6;0.1" 
+      dur="1.5s" 
+      repeatCount="indefinite" 
+    />
+  </circle>
+  
+  <!-- Middle pulse circle -->
+  <circle cx="18" cy="18" r="10" fill="#FF6B6B" opacity="0.4" filter="url(#shadow)">
+    <animate 
+      attributeName="r" 
+      values="8;10" 
+      dur="1.5s" 
+      repeatCount="indefinite" 
+    />
+    <animate 
+      attributeName="opacity" 
+      values="0.8;0.2" 
+      dur="1.5s" 
+      repeatCount="indefinite" 
+    />
+  </circle>
+  
+  <!-- Center dot -->
+  <circle cx="18" cy="18" r="5" fill="#FF6B6B" filter="url(#shadow)" />
+</svg> 
