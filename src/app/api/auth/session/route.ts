@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, applyCookiesToResponse } from '@/lib/supabase-server';
 
-// This endpoint is used to check if the user is authenticated
 export async function GET(request: NextRequest) {
   try {
     // Debug request cookies
@@ -21,6 +20,19 @@ export async function GET(request: NextRequest) {
     // Get the user from the session
     const { data, error } = await supabase.auth.getSession();
     
+    // If there's an error, try refreshing the session
+    if (error) {
+      console.log("Session error, attempting refresh:", error.message);
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      
+      if (!refreshError && refreshData.session) {
+        console.log("Session refreshed successfully");
+        // Return the refreshed session
+        const response = NextResponse.json({ session: refreshData.session });
+        return applyCookiesToResponse(response, cookiesToSet);
+      }
+    }
+    
     console.log("AUTH SESSION - Session status:", 
       data.session ? "Found session" : "No session", 
       "Error:", error ? error.message : "No error",
@@ -34,17 +46,10 @@ export async function GET(request: NextRequest) {
     
     // Create response with session data
     const response = NextResponse.json({ session: data.session });
-    
-    // Add explicit headers to help with debugging
     response.headers.set('X-Session-Status', data.session ? 'active' : 'none');
     
     // Apply any auth cookies
-    const finalResponse = applyCookiesToResponse(response, cookiesToSet);
-    
-    // Log final response cookies
-    console.log(`Final response has ${finalResponse.cookies.getAll().length} cookies`);
-    
-    return finalResponse;
+    return applyCookiesToResponse(response, cookiesToSet);
   } catch (error) {
     console.error('Server error:', error);
     
@@ -53,4 +58,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

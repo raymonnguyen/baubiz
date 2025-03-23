@@ -15,22 +15,30 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Replace the existing createClient function with this simplified version
 export function createClient(request: NextRequest) {
-  // Track cookies that need to be set
   const cookiesToSet: {name: string, value: string, options?: any}[] = [];
   
-  // Check for Authorization header or X-Supabase-Auth (from middleware)
+  // First try to get the token from Supabase cookie
+  const AUTH_COOKIE_PATTERN = /^sb-.*-auth-token$/;
+  const authCookie = request.cookies.getAll().find(cookie => 
+    AUTH_COOKIE_PATTERN.test(cookie.name)
+  );
+  
+  // Then check headers
   const authHeader = request.headers.get('Authorization');
   const middlewareToken = request.headers.get('X-Supabase-Auth');
   
   let accessToken = null;
   
-  // Get token from headers, prioritizing normal Auth header
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  // Prioritize cookie over headers
+  if (authCookie) {
+    accessToken = authCookie.value;
+    console.log('🔑 Using token from auth cookie');
+  } else if (authHeader && authHeader.startsWith('Bearer ')) {
     accessToken = authHeader.substring(7);
     console.log('🔑 Using token from Authorization header');
   } else if (middlewareToken) {
     accessToken = middlewareToken;
-    console.log('🔑 Using token from middleware X-Supabase-Auth header');
+    console.log('🔑 Using token from middleware header');
   }
   
   // Create the Supabase client
@@ -81,7 +89,6 @@ export function createClient(request: NextRequest) {
   return { supabase, cookiesToSet };
 }
 
-// Helper function to apply cookies to a response
 export function applyCookiesToResponse(response: NextResponse, cookies: {name: string, value: string, options?: any}[]): NextResponse {
   if (!cookies.length) {
     if (DEBUG_COOKIES) {
@@ -90,37 +97,44 @@ export function applyCookiesToResponse(response: NextResponse, cookies: {name: s
     return response;
   }
   
-  if (DEBUG_COOKIES) {
-    console.log(`🍪 Applying ${cookies.length} cookies to response`);
-  }
-  
-  // Add cookies to the response
   cookies.forEach(({name, value, options}) => {
     if (DEBUG_COOKIES) {
-      console.log(`🍪 Setting response cookie: ${name} with options:`, options);
+      console.log(`🍪 Setting response cookie: ${name}`);
     }
     
     try {
-      // Set standard cookie options
-      const cookieOptions = {
-        path: '/',
-        sameSite: 'lax' as const,
-        secure: process.env.NODE_ENV === 'production',
-        ...options,
-      };
+      // For auth cookies, ensure proper settings
+      if (name.includes('auth-token') || name.includes('refresh-token')) {
+        options = {
+          ...options,
+          path: '/',
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          maxAge: 60 * 60 * 24 * 7, // 7 days - make sure auth cookies last longer
+          httpOnly: name.includes('refresh') // Make refresh token httpOnly but not access token
+        };
+      } else {
+        // Standard cookie options
+        options = {
+          path: '/',
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          ...options,
+        };
+      }
       
       // Apply the cookie to the response
       response.cookies.set({
         name,
         value,
-        ...cookieOptions
+        ...options
       });
       
       // Verify the cookie was set
       const setCookie = response.cookies.get(name);
       if (DEBUG_COOKIES) {
         if (setCookie) {
-          console.log(`🍪 Verified cookie ${name} was set in response with path: ${setCookie.path || '/'}`);
+          console.log(`🍪 Verified cookie ${name} was set in response`);
         } else {
           console.error(`🍪 ERROR: Failed to set cookie ${name} in response!`);
         }
@@ -129,15 +143,6 @@ export function applyCookiesToResponse(response: NextResponse, cookies: {name: s
       console.error(`Error setting cookie ${name}:`, err);
     }
   });
-  
-  // Final check on response cookies
-  if (DEBUG_COOKIES) {
-    const finalCookies = response.cookies.getAll();
-    console.log(`🍪 Response now has ${finalCookies.length} cookies:`);
-    finalCookies.forEach(cookie => {
-      console.log(`🍪 - ${cookie.name} (path: ${cookie.path || '/'}, maxAge: ${cookie.maxAge || 'default'})`);
-    });
-  }
   
   return response;
 }

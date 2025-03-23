@@ -39,33 +39,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const router = useRouter();
 
-  // Initialize authentication state with strong persistence
   useEffect(() => {
     const initializeAuth = async () => {
       try {
         setIsLoading(true);
         
-        // Check for direct token in cookies or localStorage first
-        const cookieToken = getCookie('supabase-auth-token');
-        const localStorageToken = localStorage.getItem('supabase-auth-token');
-        
-        if (cookieToken || localStorageToken) {
-          console.log('Found existing token, attempting to restore session');
-        }
-        
-        // Get the current session
+        // First try with standard Supabase getSession
         const { data, error } = await supabase.auth.getSession();
         
-        if (error) {
+        if (data.session) {
+          // Store authentication status in localStorage to help with cross-tab sync
+          localStorage.setItem('is_authenticated', 'true');
+          
+          // We have a valid session
+          handleSessionUser(data.session.user);
+          
+          // Save the token for backup
+          if (data.session.access_token) {
+            localStorage.setItem('supabase-auth-token', data.session.access_token);
+            setCookie('supabase-auth-token', data.session.access_token, 7);
+          }
+        } else if (error) {
           console.error('Session retrieval error:', error);
           
           // Try to refresh the session
           const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
           
-          if (refreshError) {
-            console.error('Session refresh error:', refreshError);
+          if (!refreshError && refreshData.session) {
+            // Session refreshed successfully
+            localStorage.setItem('is_authenticated', 'true');
+            handleSessionUser(refreshData.session.user);
             
-            // Try to restore session from token if we have one
+            // Save the refreshed token for backup
+            if (refreshData.session.access_token) {
+              localStorage.setItem('supabase-auth-token', refreshData.session.access_token);
+              setCookie('supabase-auth-token', refreshData.session.access_token, 7);
+            }
+          } else {
+            // Last resort: Try to get token from localStorage or cookie
+            const cookieToken = getCookie('supabase-auth-token');
+            const localStorageToken = localStorage.getItem('supabase-auth-token');
+            
             if (cookieToken || localStorageToken) {
               try {
                 const token = cookieToken || localStorageToken;
@@ -78,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   console.error('Token restoration error:', tokenError);
                   handleAuthFailure();
                 } else if (tokenData.session) {
+                  localStorage.setItem('is_authenticated', 'true');
                   console.log('Session restored from token');
                   handleSessionUser(tokenData.session.user);
                 }
@@ -88,26 +103,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } else {
               handleAuthFailure();
             }
-          } else if (refreshData.session) {
-            // Session refreshed successfully
-            handleSessionUser(refreshData.session.user);
-            
-            // Save the refreshed token for backup
-            if (refreshData.session.access_token) {
-              localStorage.setItem('supabase-auth-token', refreshData.session.access_token);
-              setCookie('supabase-auth-token', refreshData.session.access_token, 7);
-            }
-          } else {
-            handleAuthFailure();
-          }
-        } else if (data.session) {
-          // We have a valid session
-          handleSessionUser(data.session.user);
-          
-          // Save the token for backup
-          if (data.session.access_token) {
-            localStorage.setItem('supabase-auth-token', data.session.access_token);
-            setCookie('supabase-auth-token', data.session.access_token, 7);
           }
         } else {
           handleAuthFailure();
@@ -120,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             
             if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
               if (currentSession?.user) {
+                localStorage.setItem('is_authenticated', 'true');
                 handleSessionUser(currentSession.user);
                 
                 // Save the token for backup
@@ -132,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 window.dispatchEvent(new CustomEvent('auth:login:success'));
               }
             } else if (event === 'SIGNED_OUT') {
+              localStorage.removeItem('is_authenticated');
               handleAuthFailure();
               // Dispatch logout event
               window.dispatchEvent(new CustomEvent('auth:logout'));
@@ -159,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleAuthFailure = () => {
       setUser(null);
       setIsAuthenticated(false);
+      localStorage.removeItem('is_authenticated');
       localStorage.removeItem('supabase-auth-token');
       deleteCookie('supabase-auth-token');
     };
@@ -268,16 +266,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Logout
   const logout = async (): Promise<void> => {
     try {
       setIsLoading(true);
       
+      // Get all auth cookie names first
+      const cookieString = document.cookie;
+      const cookies = cookieString.split(';');
+      const authCookies = cookies
+        .map(cookie => cookie.trim().split('=')[0])
+        .filter(name => name.includes('auth') || name.includes('token') || /^sb-.*-auth-token$/.test(name));
+      
+      // Call sign out API
       const { error } = await supabase.auth.signOut();
       
       if (error) {
         throw error;
       }
+      
+      // Clear all auth cookies explicitly
+      authCookies.forEach(cookieName => {
+        document.cookie = `${cookieName}=; Path=/; Max-Age=-99999999;`;
+      });
+      
+      // Also clear custom backup cookie
+      document.cookie = 'supabase-auth-token=; Path=/; Max-Age=-99999999;';
+      document.cookie = 'supabase-auth-expiry=; Path=/; Max-Age=-99999999;';
+      
+      // Clear localStorage
+      localStorage.removeItem('supabase-auth-token');
+      localStorage.removeItem('is_authenticated');
       
       // Clear authentication state
       setUser(null);
