@@ -4,16 +4,13 @@ export async function GET(
   request: Request,
   { params }: { params: { slug: string } }
 ) {
-  const { slug } = params;
+  const { slug } = await params;
 
   try {
-    // Fetch the market and its categories
+    // Fetch the market without trying to join categories
     const { data: market, error } = await supabase
       .from('markets')
-      .select(`
-        *,
-        categories:categories(*)
-      `)
+      .select('*')
       .eq('slug', slug)
       .eq('is_active', true)
       .single();
@@ -27,6 +24,14 @@ export async function GET(
       }
       throw error;
     }
+
+    // Fetch categories separately
+    const { data: categories, error: categoriesError } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('market_id', market.id);
+
+    if (categoriesError) throw categoriesError;
 
     // Count products and sellers in this marketplace
     const { count: productCount, error: productError } = await supabase
@@ -49,9 +54,10 @@ export async function GET(
     const uniqueSellerIds = new Set(sellers?.map(item => item.seller_id));
     const sellerCount = uniqueSellerIds.size;
 
-    // Return market with additional stats
+    // Return market with categories and additional stats
     return Response.json({
       ...market,
+      categories: categories || [],
       stats: {
         productCount: productCount || 0,
         sellerCount: sellerCount || 0

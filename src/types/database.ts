@@ -1,3 +1,6 @@
+import { VerificationType } from "@/components/seller/VerifiedBadge";
+import type { VerificationType as VerifiedBadgeVerificationType } from '@/components/seller/VerifiedBadge';
+
 export type UserRole = 'parent' | 'business' | 'seller' | 'admin';
 export type SellerVerificationStatus = 'not_applied' | 'pending' | 'verified' | 'rejected';
 export type BusinessType = 'individual' | 'company' | 'non_profit';
@@ -115,16 +118,74 @@ export interface SellerPaymentSetting {
 
 export interface Product {
   id: string;
-  name: string;
+  title: string;
   description: string;
+  seller_description: string | null;
   price: number;
+  originalPrice?: number;
   condition: 'new' | 'like_new' | 'good' | 'fair' | 'poor';
+  category: string;
   category_id: string;
   seller_id: string;
   images: string[];
+  status: 'active' | 'sold' | 'archived';
   created_at: string;
   updated_at: string;
-  status: 'active' | 'sold' | 'archived';
+  seller_name: string;
+  seller_business_type: VerificationType;
+  properties?: ProductProperty[];
+  isNew?: boolean;
+  rating?: number;
+  totalSales?: number;
+  features?: string[];
+  details?: Record<string, string>;
+  shippingInfo?: {
+    methods: Array<{
+      name: string;
+      price: number;
+      estimatedDelivery: string;
+    }>;
+    returns?: string;
+  };
+  seller?: {
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    business_type: VerificationType;
+    seller_verification_status: string;
+    created_at: string;
+  };
+  relatedProducts?: Array<{
+    id: string;
+    title: string;
+    price: number;
+    image: string;
+    condition: string;
+  }>;
+  quantity?: number;
+  slug: string;
+}
+
+export interface ProductProperty {
+  id: string;
+  product_id: string;
+  attr_name: string;
+  attr_name_id?: number;
+  attr_value: string;
+  attr_value_id?: number;
+  property_type: 'basic' | 'technical' | 'material' | 'feature' | 'packaging' | 'certification';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CartItem {
+  id: string;
+  user_id: string;
+  product_id: string;
+  seller_id: string;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Database {
@@ -175,6 +236,20 @@ export interface Database {
         Insert: Omit<SellerPaymentSetting, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<SellerPaymentSetting, 'id' | 'created_at' | 'updated_at'>>;
       };
+      cart_items: {
+        Row: CartItem;
+        Insert: Omit<CartItem, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<CartItem, 'id' | 'created_at' | 'updated_at'>>;
+      };
     };
   };
+}
+
+export interface Seller {
+  id: string;
+  name: string;
+  business_type?: string;
+  created_at?: string;
+  avatar_url?: string;
+  verification_status?: 'unverified' | 'verified' | 'rejected';
 } 

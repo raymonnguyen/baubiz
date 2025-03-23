@@ -3,12 +3,14 @@ DROP TABLE IF EXISTS products CASCADE;
 DROP TABLE IF EXISTS categories CASCADE;
 DROP TABLE IF EXISTS verification_requests CASCADE;
 DROP TABLE IF EXISTS profiles CASCADE;
+DROP TABLE IF EXISTS product_properties CASCADE;
 
 -- Create enum types
 CREATE TYPE seller_verification_status AS ENUM ('not_applied', 'pending', 'verified', 'rejected');
 CREATE TYPE business_type AS ENUM ('individual', 'business');
 CREATE TYPE product_condition AS ENUM ('new', 'like_new', 'good', 'fair', 'poor');
 CREATE TYPE product_status AS ENUM ('active', 'sold', 'archived');
+CREATE TYPE property_type AS ENUM ('basic', 'technical', 'material', 'feature', 'packaging', 'certification');
 
 -- Create profiles table
 CREATE TABLE profiles (
@@ -46,6 +48,7 @@ CREATE TABLE products (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
+  seller_description TEXT,
   price DECIMAL(10,2) NOT NULL,
   condition product_condition NOT NULL,
   category_id UUID REFERENCES categories(id) NOT NULL,
@@ -55,6 +58,23 @@ CREATE TABLE products (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
+
+-- Create product_properties table
+CREATE TABLE product_properties (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  attr_name TEXT NOT NULL,
+  attr_name_id INTEGER,
+  attr_value TEXT NOT NULL,
+  attr_value_id INTEGER,
+  property_type property_type NOT NULL DEFAULT 'basic',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Create indexes for product_properties
+CREATE INDEX idx_product_properties_product_id ON product_properties(product_id);
+CREATE INDEX idx_product_properties_type ON product_properties(property_type);
 
 -- Create verification_requests table
 CREATE TABLE verification_requests (

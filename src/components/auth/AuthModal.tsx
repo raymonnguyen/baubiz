@@ -12,6 +12,7 @@ interface AuthModalProps {
   initialMode?: 'login' | 'signup';
   title?: string;
   subtitle?: string;
+  message?: string;
   redirectPath?: string;
   actionAfterAuth?: () => void;
 }
@@ -22,6 +23,7 @@ export default function AuthModal({
   initialMode = 'signup',
   title = 'Join Mom Marketplace',
   subtitle,
+  message,
   redirectPath = '',
   actionAfterAuth
 }: AuthModalProps) {
@@ -110,17 +112,19 @@ export default function AuthModal({
         // Toast success happens in AuthContext
       }
       
+      // Dismiss the loading toast immediately after successful login
+      toast.dismiss(loadingToast);
+      
       // If there's an action to perform after authentication, do it
       if (actionAfterAuth) {
         actionAfterAuth();
       }
       
-      // Dismiss the loading toast
-      toast.dismiss(loadingToast);
       onClose();
     } catch (err: any) {
       console.error('Auth error:', err);
       setError(err.message || 'Authentication failed. Please try again.');
+      
       // Dismiss the loading toast
       toast.dismiss(loadingToast);
       // The error toast is already shown in the AuthContext
@@ -179,6 +183,11 @@ export default function AuthModal({
                 </div>
                 <h2 className="text-3xl font-bold text-gray-900">{title}</h2>
                 {subtitle && <p className="mt-2 text-center text-gray-600">{subtitle}</p>}
+                {message && (
+                  <div className="mt-3 p-3 bg-yellow-50 text-yellow-800 rounded-lg text-sm">
+                    <p>{message}</p>
+                  </div>
+                )}
                 
                 {/* Instructions for demo login */}
                 <div className="mt-3 p-3 bg-blue-50 text-blue-800 rounded-lg text-sm">

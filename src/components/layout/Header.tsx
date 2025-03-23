@@ -8,17 +8,15 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import UserAvatar from '@/components/common/UserAvatar';
+import CartButton from '@/components/cart/CartButton';
 
 const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSellerMenuOpen, setIsSellerMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [cartItemCount, setCartItemCount] = useState(0);
   const sellerMenuRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
-  const cartRef = useRef<HTMLDivElement>(null);
   const { isAuthenticated, user, logout, showAuthModal } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -47,9 +45,6 @@ const Header = () => {
       if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
         setIsNotificationsOpen(false);
       }
-      if (cartRef.current && !cartRef.current.contains(event.target as Node)) {
-        setIsCartOpen(false);
-      }
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
         setIsProfileMenuOpen(false);
       }
@@ -59,11 +54,6 @@ const Header = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
-
-  // Mock cart data - would come from a cart context in a real app
-  useEffect(() => {
-    setCartItemCount(3); // Example - would be actual cart items count
   }, []);
 
   const isActive = (path: string) => {
@@ -255,79 +245,8 @@ const Header = () => {
               )}
             </div>
 
-            {/* Shopping Cart */}
-            <div className="relative hidden md:block" ref={cartRef}>
-              <button 
-                onClick={() => setIsCartOpen(!isCartOpen)}
-                className="flex items-center text-gray-600 hover:text-primary transition-colors"
-                aria-label="Shopping cart"
-              >
-                <div className="relative">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  {cartItemCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 flex items-center justify-center rounded-full">
-                      {cartItemCount}
-                    </span>
-                  )}
-                </div>
-              </button>
-              
-              {isCartOpen && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-lg shadow-lg py-2 z-30">
-                  <div className="p-3 border-b border-gray-100">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-900">Shopping Cart ({cartItemCount})</span>
-                    </div>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto">
-                    <div className="p-4 border-b border-gray-100">
-                      <div className="flex">
-                        <div className="flex-shrink-0 mr-3">
-                          <div className="w-16 h-16 bg-gray-200 rounded-md"></div>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="text-sm font-medium text-gray-900">Vintage Pearl Necklace</h4>
-                          <p className="text-xs text-gray-500">Vintage Jewelry Addicts</p>
-                          <div className="flex justify-between mt-2">
-                            <p className="text-sm font-medium text-gray-900">$45.99</p>
-                            <button className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="p-4 border-b border-gray-100">
-                      <div className="flex">
-                        <div className="flex-shrink-0 mr-3">
-                          <div className="w-16 h-16 bg-gray-200 rounded-md"></div>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="text-sm font-medium text-gray-900">Handcrafted Wooden Toy</h4>
-                          <p className="text-xs text-gray-500">Artisan Collectibles</p>
-                          <div className="flex justify-between mt-2">
-                            <p className="text-sm font-medium text-gray-900">$32.50</p>
-                            <button className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm text-gray-600">Subtotal</span>
-                      <span className="text-sm font-medium text-gray-900">$78.49</span>
-                    </div>
-                    <button className="w-full bg-primary text-white py-2 rounded-lg font-medium hover:bg-primary-dark transition-colors">
-                      Checkout
-                    </button>
-                    <Link href="/cart" className="block text-center mt-2 text-sm text-primary hover:text-primary-dark">
-                      View Cart
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Cart */}
+            <CartButton />
 
             {/* User section */}
             <div className="flex items-center space-x-4">
@@ -447,11 +366,6 @@ const Header = () => {
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
-                    {cartItemCount > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 flex items-center justify-center rounded-full">
-                        {cartItemCount}
-                      </span>
-                    )}
                   </div>
                   Cart
                 </Link>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -9,252 +9,455 @@ import AuthModal from '@/components/auth/AuthModal';
 import { useAuth } from '@/contexts/AuthContext';
 import VerifiedBadge from '@/components/seller/VerifiedBadge';
 import BidSystem, { Bid, CounterOffer } from '@/components/product/BidSystem';
+import { Check, ChevronLeft, ChevronRight, Heart, Minus, Plus, HelpCircle, Tag, ShoppingBag, Truck, RefreshCw } from 'lucide-react';
+import { Product, ProductProperty } from '@/types/database';
+import { useCart } from '@/contexts/CartContext';
+import CartAddedConfirmation from '@/components/cart/CartAddedConfirmation';
 
-// Define interfaces for strong typing
-interface Seller {
+// Define the seller type from the database
+interface DatabaseSeller {
   id: string;
   name: string;
-  avatar: string;
-  location: string;
-  verified: boolean;
-  totalSales: number;
-  responseRate: number;
-  responseTime: string;
-  joinedDate: string;
-  rating: number;
-  reviews: number;
-  verificationType: 'parent' | 'business';
+  avatar_url: string | null;
+  business_type: 'company' | 'parent';
+  seller_verification_status: string;
+  created_at: string;
 }
 
-interface Product {
-  id: string;
+// Helper component for sliders
+interface ProductSliderProps {
   title: string;
-  price: number;
-  originalPrice: number | null;
-  images: string[];
-  condition: string;
-  isNew: boolean;
-  description: string;
-  details: {
-    [key: string]: string;
-  };
-  shippingInfo: {
-    methods: {
-      name: string;
-      price: number;
-      estimatedDelivery: string;
-    }[];
-    returns: string;
-  };
-  seller: Seller;
-  marketplace: {
-    id: string;
-    name: string;
-    logo: string;
-  };
-  relatedProducts: {
-    id: string;
-    title: string;
-    price: number;
-    image: string;
-    condition: string;
-  }[];
-  category: string;
-  features: string[];
+  subtitle?: string;
+  products: Product[];
+  onProductSelect?: (product: Product) => void;
+  selectedProducts?: Product[];
+  showPrice?: boolean;
+  showQuantity?: boolean;
 }
 
-// Mock data for a sample product
-const sampleProduct: Product = {
-  id: 'vintage-pearl-necklace',
-  title: '1960s Vintage Pearl Necklace with Original Box and Certificate',
-  price: 45.99,
-  originalPrice: 89.99,
-  images: [
-    '/images/products/pearl-necklace-1.jpg',
-    '/images/products/pearl-necklace-2.jpg',
-    '/images/products/pearl-necklace-3.jpg',
-    '/images/products/pearl-necklace-4.jpg',
-  ],
-  condition: 'Excellent',
-  isNew: false,
-  description: "This elegant vintage pearl necklace from the 1960s features a single strand of hand-knotted freshwater pearls with a secure silver clasp. The pearls maintain their original luster and show minimal wear, making this piece a beautiful addition to any jewelry collection. The necklace comes in its original box with a certificate of authenticity.\n\nLength: 18 inches\nPearl size: 5-6mm\nClasp: Sterling silver\n\nPerfect for both special occasions and everyday wear, this timeless piece adds sophistication to any outfit.",
-  details: {
-    'Era': '1960s',
-    'Style': 'Classic',
-    'Materials': 'Freshwater pearls, Sterling silver',
-    'Length': '18 inches',
-    'Pearl Size': '5-6mm',
-    'Clasp Type': 'Secure box clasp',
-    'Condition Notes': 'Excellent vintage condition. Minor surface patina on clasp consistent with age.',
-    'Included': 'Original box and certificate of authenticity'
-  },
-  shippingInfo: {
-    methods: [
-      {
-        name: 'Standard Shipping',
-        price: 5.99,
-        estimatedDelivery: '5-7 business days'
-      },
-      {
-        name: 'Expedited Shipping',
-        price: 12.99,
-        estimatedDelivery: '2-3 business days'
-      },
-      {
-        name: 'International Shipping',
-        price: 24.99,
-        estimatedDelivery: '7-14 business days'
-      }
-    ],
-    returns: 'Returns accepted within 14 days of delivery. Item must be in original condition with all packaging and documentation. Buyer is responsible for return shipping costs unless the item was misrepresented.'
-  },
-  seller: {
-    id: 'emma123',
-    name: 'Emma Johnson',
-    avatar: '/images/avatars/emma.jpg',
-    location: 'Chicago, IL',
-    verified: true,
-    totalSales: 1283,
-    responseRate: 98,
-    responseTime: 'Within 24 hours',
-    joinedDate: 'Jan 2020',
-    rating: 4.8,
-    reviews: 127,
-    verificationType: 'business',
-  },
-  marketplace: {
-    id: 'vintage-jewelry',
-    name: 'Vintage Jewelry Addicts',
-    logo: '/images/marketplaces/vintage-logo.png'
-  },
-  relatedProducts: [
-    {
-      id: 'gold-bracelet',
-      title: 'Antique Gold Link Bracelet',
-      price: 129.00,
-      image: '/images/products/gold-bracelet.jpg',
-      condition: 'Very Good'
-    },
-    {
-      id: 'silver-earrings',
-      title: 'Art Deco Silver Dangle Earrings',
-      price: 36.50,
-      image: '/images/products/silver-earrings.jpg',
-      condition: 'Excellent'
-    },
-    {
-      id: 'jade-pendant',
-      title: 'Vintage Jade Pendant Necklace',
-      price: 89.99,
-      image: '/images/products/jade-pendant.jpg',
-      condition: 'Excellent'
-    },
-    {
-      id: 'cameo-brooch',
-      title: 'Victorian Cameo Brooch',
-      price: 75.00,
-      image: '/images/products/cameo-brooch.jpg',
-      condition: 'Good'
+const ProductSlider = ({ 
+  title, 
+  subtitle,
+  products, 
+  onProductSelect,
+  selectedProducts = [],
+  showPrice = true,
+  showQuantity = false 
+}: ProductSliderProps) => {
+  const sliderRef = useRef<HTMLDivElement>(null);
+  
+  const scroll = (direction: 'left' | 'right') => {
+    if (sliderRef.current) {
+      const { scrollLeft, clientWidth } = sliderRef.current;
+      const scrollTo = direction === 'left' 
+        ? scrollLeft - clientWidth * 0.8 
+        : scrollLeft + clientWidth * 0.8;
+      
+      sliderRef.current.scrollTo({
+        left: scrollTo,
+        behavior: 'smooth'
+      });
     }
-  ],
-  category: 'Jewelry',
-  features: [
-    'Authentic 1960s design',
-    'Hand-knotted freshwater pearls',
-    'Original brass clasp',
-    'Length: 18 inches',
-    'Weight: 35 grams'
-  ],
+  };
+  
+  return (
+    <div className="mt-12">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-xl font-bold">{title}</h2>
+          {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+        </div>
+        {selectedProducts.length > 0 && (
+          <div className="text-right">
+            <p className="text-sm text-gray-500">Total</p>
+            <p className="text-lg font-semibold text-primary">
+              ${selectedProducts.reduce((total, product) => total + (product.price * (product.quantity || 1)), 0).toFixed(2)}
+            </p>
+          </div>
+        )}
+      </div>
+      
+      <div className="relative">
+        <div className="overflow-hidden" ref={sliderRef}>
+          <div className="flex gap-4">
+            {products.map((product) => (
+              <div key={product.id} className="flex-shrink-0 w-[250px]">
+                <div className="group relative bg-white rounded-lg border border-gray-200 hover:border-primary transition-colors duration-200">
+                  <Link href={`/product/${product.slug}`} className="block">
+                    <div className="aspect-square relative overflow-hidden rounded-t-lg">
+                      <Image
+                        src={product.images[0]}
+                        alt={product.title}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      {product.condition === 'new' && (
+                        <span className="absolute top-2 right-2 bg-primary text-white text-xs px-2 py-1 rounded-full">
+                          New
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <h3 className="text-sm font-medium text-gray-900 line-clamp-2 mb-2">
+                        {product.title}
+                      </h3>
+                      {showPrice && (
+                        <div className="flex items-center justify-between">
+                          <p className="text-lg font-semibold text-primary">
+                            ${product.price.toFixed(2)}
+                          </p>
+                          {product.originalPrice && (
+                            <p className="text-sm text-gray-500 line-through">
+                              ${product.originalPrice.toFixed(2)}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+                  {showQuantity && (
+                    <div className="p-4 pt-0 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => onProductSelect?.({
+                            ...product,
+                            quantity: Math.max(1, (product.quantity || 1) - 1)
+                          })}
+                          className="p-1 rounded-full hover:bg-gray-100"
+                        >
+                          <Minus className="w-4 h-4" />
+                        </button>
+                        <span className="w-8 text-center">{product.quantity || 1}</span>
+                        <button
+                          onClick={() => onProductSelect?.({
+                            ...product,
+                            quantity: (product.quantity || 1) + 1
+                          })}
+                          className="p-1 rounded-full hover:bg-gray-100"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => onProductSelect?.(product)}
+                        className="text-primary hover:text-primary-dark"
+                      >
+                        Add to Cart
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={() => scroll('left')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg z-10 border border-gray-200 hover:bg-gray-100 transition-colors"
+          aria-label="Previous items"
+        >
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+        <button
+          onClick={() => scroll('right')}
+          className="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg z-10 border border-gray-200 hover:bg-gray-100 transition-colors"
+          aria-label="Next items"
+        >
+          <ChevronRight className="w-6 h-6" />
+        </button>
+      </div>
+    </div>
+  );
 };
 
-// Mock data for parent seller product
-const parentSellerProduct: Product = {
-  id: 'handmade-baby-blanket',
-  title: 'Handmade Organic Cotton Baby Blanket',
-  price: 35.99,
-  originalPrice: 45.99,
-  images: [
-    '/images/products/baby-blanket-1.jpg',
-    '/images/products/baby-blanket-2.jpg',
-    '/images/products/baby-blanket-3.jpg',
-  ],
-  condition: 'New',
-  isNew: true,
-  description: "This beautifully crafted handmade baby blanket is made from 100% organic cotton, perfect for sensitive skin. Each blanket is lovingly made by a parent seller, with special attention to quality and safety. The soft, breathable fabric is ideal for newborns and features a gentle pattern that works well for any nursery theme.\n\nSize: 30 x 40 inches\nMaterial: 100% Organic Cotton\nCare: Machine washable on gentle cycle, tumble dry low\n\nThis blanket makes a wonderful baby shower gift or addition to your own little one's nursery.",
-  details: {
-    'Material': '100% Organic Cotton',
-    'Size': '30 x 40 inches',
-    'Weight': '12 oz',
-    'Care': 'Machine washable (gentle), tumble dry low',
-    'Age Range': '0-36 months',
-    'Made By': 'Hand-crafted by a parent',
-    'Origin': 'Made in USA',
-  },
-  shippingInfo: {
-    methods: [
-      {
-        name: 'Standard Shipping',
-        price: 4.99,
-        estimatedDelivery: '3-5 business days'
-      },
-      {
-        name: 'Express Shipping',
-        price: 9.99,
-        estimatedDelivery: '1-2 business days'
+// Component for frequently bought together section
+interface FrequentlyBoughtTogetherProps {
+  mainProduct: Product;
+  relatedProducts: Product[];
+}
+
+const FrequentlyBoughtTogether = ({ mainProduct, relatedProducts }: FrequentlyBoughtTogetherProps) => {
+  const { addToCart } = useCart();
+  const { push } = useRouter();
+  const [selectedProducts, setSelectedProducts] = useState(
+    new Set([mainProduct.id, ...relatedProducts.map(p => p.id)])
+  );
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [addedProducts, setAddedProducts] = useState<Product[]>([]);
+  
+  const toggleProduct = (id: string) => {
+    const newSelected = new Set(selectedProducts);
+    if (newSelected.has(id)) {
+      // Don't allow deselecting the main product
+      if (id !== mainProduct.id) {
+        newSelected.delete(id);
       }
-    ],
-    returns: 'Returns accepted within 30 days if unused and in original packaging. Buyer pays return shipping.'
-  },
-  seller: {
-    id: 'sarah456',
-    name: 'Sarah Miller',
-    avatar: '/images/avatars/sarah.jpg',
-    location: 'Portland, OR',
-    verified: true,
-    totalSales: 187,
-    responseRate: 99,
-    responseTime: 'Within 12 hours',
-    joinedDate: 'Mar 2021',
-    rating: 4.9,
-    reviews: 64,
-    verificationType: 'parent',
-  },
-  marketplace: {
-    id: 'parent-made-goods',
-    name: 'Parent-Made Baby Goods',
-    logo: '/images/marketplaces/parent-made-logo.png'
-  },
-  relatedProducts: [
-    {
-      id: 'baby-hat-set',
-      title: 'Organic Cotton Baby Hat Set',
-      price: 22.50,
-      image: '/images/products/baby-hat.jpg',
-      condition: 'New'
-    },
-    {
-      id: 'wooden-rattle',
-      title: 'Handcrafted Wooden Baby Rattle',
-      price: 18.99,
-      image: '/images/products/wooden-rattle.jpg',
-      condition: 'New'
-    },
-    {
-      id: 'organic-bib-set',
-      title: 'Set of 3 Organic Cotton Bibs',
-      price: 24.99,
-      image: '/images/products/bib-set.jpg',
-      condition: 'New'
+    } else {
+      newSelected.add(id);
     }
-  ],
-  category: 'Baby',
-  features: [
-    '100% Organic Cotton',
-    'Handmade by a parent seller',
-    'Machine washable',
-    'Hypoallergenic',
-    'Chemical-free dyes'
-  ],
+    setSelectedProducts(newSelected);
+  };
+  
+  const calculateTotal = () => {
+    let total = selectedProducts.has(mainProduct.id) ? mainProduct.price : 0;
+    relatedProducts.forEach(product => {
+      if (selectedProducts.has(product.id)) {
+        total += product.price;
+      }
+    });
+    return total.toFixed(2);
+  };
+  
+  return (
+    <div className="mt-12 bg-gray-50 rounded-xl p-6">
+      <h2 className="text-xl font-bold mb-6">Frequently Bought Together</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="md:col-span-8">
+          <div className="flex flex-wrap gap-8 items-start">
+            {/* Main product (always selected) */}
+            <div className="w-[120px]">
+              <div className="relative">
+                <div className="aspect-square rounded-md overflow-hidden bg-white border border-gray-200">
+                  <Image
+                    src={mainProduct.images[0]}
+                    alt={mainProduct.title}
+                    width={120}
+                    height={120}
+                    className="object-cover"
+                  />
+                </div>
+                <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-xs shadow-md">
+                  1
+                </div>
+              </div>
+              <p className="text-xs mt-2 text-center line-clamp-2">{mainProduct.title}</p>
+            </div>
+            
+            {/* Plus sign */}
+            <div className="flex items-center justify-center">
+              <Plus className="w-5 h-5 text-gray-400" />
+            </div>
+            
+            {/* Related products */}
+            {relatedProducts.map((product, index) => (
+              <div key={product.id} className="w-[120px]">
+                <div className="relative">
+                  <button 
+                    onClick={() => toggleProduct(product.id)}
+                    className={`absolute -top-2 -left-2 w-5 h-5 rounded-md ${
+                      selectedProducts.has(product.id) ? 'bg-blue-600' : 'bg-white border border-gray-300'
+                    } flex items-center justify-center z-10`}
+                    aria-label={`${selectedProducts.has(product.id) ? 'Remove' : 'Add'} ${product.title}`}
+                  >
+                    {selectedProducts.has(product.id) && (
+                      <Check className="w-4 h-4 text-white" />
+                    )}
+                  </button>
+                  <div className={`aspect-square rounded-md overflow-hidden ${
+                    selectedProducts.has(product.id) ? 'bg-white border border-gray-200' : 'bg-gray-100 opacity-70'
+                  }`}>
+                    <Image
+                      src={product.images[0]}
+                      alt={product.title}
+                      width={120}
+                      height={120}
+                      className="object-cover"
+                    />
+                  </div>
+                  <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-xs shadow-md">
+                    {index + 2}
+                  </div>
+                </div>
+                <p className="text-xs mt-2 text-center line-clamp-2">{product.title}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        <div className="md:col-span-4">
+          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-1">Price for all:</p>
+              <p className="text-xl font-bold text-gray-900">${calculateTotal()}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {selectedProducts.size} item{selectedProducts.size > 1 ? 's' : ''} selected
+              </p>
+            </div>
+            
+            <button 
+              onClick={() => {
+                // Get the selected products
+                const selectedProductItems = [mainProduct, ...relatedProducts].filter(
+                  product => selectedProducts.has(product.id)
+                );
+                
+                // Add each selected product to cart
+                selectedProductItems.forEach(product => {
+                  addToCart(product, 1);
+                });
+                
+                // Show confirmation
+                setAddedProducts(selectedProductItems);
+                setShowConfirmation(true);
+              }}
+              className="w-full bg-primary text-white py-2 rounded-lg hover:bg-primary-dark transition-colors"
+            >
+              Add Selected to Cart
+            </button>
+            
+            <div className="mt-4 text-xs text-gray-500">
+              <p className="flex items-center gap-1">
+                <Truck className="w-3 h-3" />
+                Ships together
+              </p>
+              <p className="flex items-center gap-1 mt-1">
+                <Tag className="w-3 h-3" />
+                Save 10% when bought together
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Add the confirmation modal */}
+      {showConfirmation && (
+        <CartAddedConfirmation
+          products={addedProducts}
+          onClose={() => setShowConfirmation(false)}
+          onViewCart={() => {
+            setShowConfirmation(false);
+            push('/cart');
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// Add new interfaces for the sections
+interface ProductSectionProps {
+  title: string;
+  subtitle?: string;
+  products: Product[];
+  onProductSelect?: (product: Product) => void;
+  selectedProducts?: Product[];
+  showPrice?: boolean;
+  showQuantity?: boolean;
+}
+
+// Add new component for product sections
+const ProductSection = ({ 
+  title, 
+  subtitle, 
+  products, 
+  onProductSelect, 
+  selectedProducts = [], 
+  showPrice = true,
+  showQuantity = false 
+}: ProductSectionProps) => {
+  const calculateTotal = () => {
+    return selectedProducts.reduce((total, product) => total + (product.price * (product.quantity || 1)), 0);
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
+          {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+        </div>
+        {selectedProducts.length > 0 && (
+          <div className="text-right">
+            <p className="text-sm text-gray-500">Total</p>
+            <p className="text-lg font-semibold text-primary">${calculateTotal().toFixed(2)}</p>
+          </div>
+        )}
+      </div>
+      
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {products.map((product) => (
+          <div 
+            key={product.id}
+            className="group relative bg-white rounded-lg border border-gray-200 hover:border-primary transition-colors duration-200"
+          >
+            <Link href={`/product/${product.slug}`} className="block">
+              <div className="aspect-square relative overflow-hidden rounded-t-lg">
+                <Image
+                  src={product.images[0]}
+                  alt={product.title}
+                  fill
+                  className="object-cover group-hover:scale-105 transition-transform duration-200"
+                />
+                {product.condition === 'new' && (
+                  <span className="absolute top-2 right-2 bg-primary text-white text-xs px-2 py-1 rounded-full">
+                    New
+                  </span>
+                )}
+              </div>
+              <div className="p-4">
+                <h4 className="text-sm font-medium text-gray-900 line-clamp-2 mb-2">
+                  {product.title}
+                </h4>
+                {showPrice && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-lg font-semibold text-primary">
+                      ${product.price.toFixed(2)}
+                    </p>
+                    {product.originalPrice && (
+                      <p className="text-sm text-gray-500 line-through">
+                        ${product.originalPrice.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {showQuantity && (
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onProductSelect?.({
+                            ...product,
+                            quantity: Math.max(1, (product.quantity || 1) - 1)
+                          });
+                        }}
+                        className="p-1 rounded-full hover:bg-gray-100"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="w-8 text-center">{product.quantity || 1}</span>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onProductSelect?.({
+                            ...product,
+                            quantity: (product.quantity || 1) + 1
+                          });
+                        }}
+                        className="p-1 rounded-full hover:bg-gray-100"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onProductSelect?.(product);
+                      }}
+                      className="text-primary hover:text-primary-dark"
+                    >
+                      Add to Cart
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Link>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 export default function ProductDetailPage() {
@@ -265,14 +468,56 @@ export default function ProductDetailPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isSaved, setIsSaved] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const [selectedTab, setSelectedTab] = useState('details');
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   
   // Add state for bids and counter offers
   const [bids, setBids] = useState<Bid[]>([]);
   const [counterOffers, setCounterOffers] = useState<CounterOffer[]>([]);
   
-  // Auth state
   const { isAuthenticated, showAuthModal, authModalVisible, hideAuthModal, authModalMode, user, authModalActionAfterAuth } = useAuth();
   
+  const [frequentlyBoughtTogether, setFrequentlyBoughtTogether] = useState<Product[]>([]);
+  const [moreFromSeller, setMoreFromSeller] = useState<Product[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
+  
+  const { addToCart } = useCart();
+  
+  // Add to cart with feedback
+  const [cartFeedback, setCartFeedback] = useState(false);
+  const [showAddedToCartConfirmation, setShowAddedToCartConfirmation] = useState(false);
+  
+  const handleAddToCart = async () => {
+    if (!product) return;
+    await addToCart(product, quantity);
+    setShowAddedToCartConfirmation(true);
+  };
+
+  // Effect to load the product data
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        setLoading(true);
+        
+        const response = await fetch(`/api/products/${params.id}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch product');
+        }
+        
+        const data = await response.json();
+        setProduct(data.product);
+        setFrequentlyBoughtTogether(data.frequentlyBoughtTogether);
+        setMoreFromSeller(data.moreFromSeller);
+      } catch (error) {
+        console.error('Error fetching product:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [params.id]);
+
   // Auth-required action handlers
   const handleAuthRequiredAction = (action: 'save' | 'message' | 'buy' | 'cart', mode: 'login' | 'signup' = 'signup') => {
     if (!isAuthenticated) {
@@ -285,7 +530,7 @@ export default function ProductDetailPage() {
           break;
         case 'message':
           // In a real app, redirect to messaging
-          router.push(`/messages/new?seller=${product?.seller.id}`);
+          router.push(`/messages/new?seller=${product?.seller_id}`);
           break;
         case 'buy':
           // In a real app, redirect to checkout
@@ -295,32 +540,15 @@ export default function ProductDetailPage() {
           // In a real app, add to cart
           console.log('Added to cart:', product?.id);
           // Show some confirmation
+          handleAddToCart();
           break;
       }
     }
   };
 
-  // Effect to load the product data
-  useEffect(() => {
-    // In a real app, this would be an API call based on params.id
-    setLoading(true);
-    
-    // Simulate API delay
-    setTimeout(() => {
-      // Choose product based on id
-      const productId = params.id as string;
-      if (productId === 'handmade-baby-blanket') {
-        setProduct(parentSellerProduct);
-      } else {
-        setProduct(sampleProduct);
-      }
-      setLoading(false);
-    }, 500);
-  }, [params.id]);
-
   if (loading) {
     return (
-      <div className="container-custom py-16 min-h-screen">
+      <div className="container mx-auto py-16 px-4 min-h-screen">
         <div className="animate-pulse">
           <div className="h-96 bg-gray-200 rounded-lg mb-8"></div>
           <div className="h-8 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -333,7 +561,7 @@ export default function ProductDetailPage() {
 
   if (!product) {
     return (
-      <div className="container-custom py-16 min-h-screen">
+      <div className="container mx-auto py-16 px-4 min-h-screen">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Product Not Found</h2>
           <p className="text-gray-600 mb-6">We couldn't find the product you're looking for.</p>
@@ -440,449 +668,459 @@ export default function ProductDetailPage() {
     return Promise.resolve();
   };
 
+  // Add handler for product selection
+  const handleProductSelect = (selectedProduct: Product) => {
+    setSelectedProducts(prev => {
+      const existingIndex = prev.findIndex(p => p.id === selectedProduct.id);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex] = selectedProduct;
+        return updated;
+      }
+      return [...prev, selectedProduct];
+    });
+  };
+
   return (
-    <main className="bg-gray-50 pb-16">
-      {/* Auth Modal */}
-      <AuthModal 
-        isOpen={authModalVisible}
-        onClose={hideAuthModal}
-        initialMode={authModalMode}
-        title="Join Mom Marketplace"
-        subtitle="Sign up to save items, message sellers, and more!"
-        actionAfterAuth={authModalActionAfterAuth}
-      />
+    <div className="bg-white min-h-screen">
+      {/* Added to cart feedback */}
+      {cartFeedback && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-green-100 border border-green-500 text-green-700 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
+          <Check className="w-5 h-5" />
+          Added to cart successfully!
+        </div>
+      )}
       
       {/* Breadcrumb */}
-      <div className="container-custom py-4">
+      <div className="container mx-auto py-3 px-4">
         <div className="text-sm text-gray-500">
-          <Link href="/marketplace" className="hover:text-primary">Marketplace</Link>
-          {!loading && product && (
-            <>
-              <span className="mx-2">›</span>
-              <Link href={`/marketplace/${product.marketplace.id}`} className="hover:text-primary">{product.marketplace.name}</Link>
-              <span className="mx-2">›</span>
-              <span className="text-gray-700">{product.title}</span>
-            </>
-          )}
+          <Link href="/" className="hover:text-primary hover:underline">Home</Link>
+          <span className="mx-2">›</span>
+          <Link href="/marketplace" className="hover:text-primary hover:underline">Marketplace</Link>
+          <span className="mx-2">›</span>
+          <Link href={`/categories/${product.category}`} className="hover:text-primary hover:underline">
+            {product.category}
+          </Link>
+          <span className="mx-2">›</span>
+          <span className="text-gray-600">{product.title}</span>
         </div>
       </div>
 
-      {/* Testing Instructions Alert */}
-      <div className="container-custom mb-6">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-500 mt-0.5 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div>
-            <h4 className="text-sm font-medium text-blue-800 mb-1">Testing the Bid System</h4>
-            <p className="text-sm text-blue-700">
-              The bid system is available only for products from parent sellers. To test it:
-            </p>
-            <ul className="list-disc list-inside mt-2 text-sm text-blue-700 ml-2">
-              <li>Visit <Link href="/product/handmade-baby-blanket" className="underline font-medium">/product/handmade-baby-blanket</Link> to see a product from a parent seller with bidding enabled</li>
-              <li>The "Vintage Pearl Necklace" product is from a business seller, so bidding is not available</li>
-              <li>You must be logged in to place a bid</li>
-            </ul>
+      {/* Product Title and Seller Info */}
+      <div className="container mx-auto px-4">
+        <div className="mb-4">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{product.title}</h1>
+        </div>
+
+        {/* Seller Overview */}
+        {product.seller && (
+          <div className={`rounded-lg p-4 mb-6 ${
+            product.seller.business_type === 'business' 
+              ? 'bg-purple-50 border border-purple-100' 
+              : 'bg-blue-50 border border-blue-100'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gray-200 rounded-full flex-shrink-0 overflow-hidden">
+                <Image
+                  src={product.seller.avatar_url || '/images/default-avatar.png'}
+                  alt={product.seller.name}
+                  width={40}
+                  height={40}
+                  className="rounded-full object-cover"
+                />
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link href={`/seller/${product.seller.id}`} className="text-gray-900 hover:underline font-medium">
+                    {product.seller.name}
+                  </Link>
+                  <VerifiedBadge 
+                    type={product.seller.business_type}
+                    showLabel={true}
+                    size="sm"
+                    enrollmentDate={product.seller.created_at}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Loading state */}
-      {loading && (
-        <div className="container-custom">
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden p-8">
-            <div className="animate-pulse">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="aspect-square bg-gray-200 rounded-lg"></div>
+        {/* Main Product Content */}
+        <div className="grid grid-cols-12 gap-6 md:gap-8">
+          {/* Left Column - Images */}
+          <div className="col-span-12 lg:col-span-7">
+            <div className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 mb-4">
+              {product.images && product.images.length > 0 && (
+                <Image
+                  src={product.images[currentImageIndex]}
+                  alt={product.title}
+                  fill
+                  className="object-contain"
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  priority
+                />
+              )}
+              <button 
+                onClick={() => handlePrevImage()}
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-md hover:bg-white transition-colors"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button 
+                onClick={() => handleNextImage()}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-md hover:bg-white transition-colors"
+                aria-label="Next image"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+              <button
+                onClick={toggleSave}
+                className="absolute top-4 right-4 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-md hover:bg-white transition-colors"
+                aria-label={isSaved ? "Remove from wishlist" : "Add to wishlist"}
+              >
+                <Heart className={`w-6 h-6 ${isSaved ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
+              </button>
+            </div>
+            {product.images && (
+              <div className="grid grid-cols-6 gap-2">
+                {product.images.map((image, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleImageChange(index)}
+                    className={`relative aspect-square rounded-md overflow-hidden ${
+                      currentImageIndex === index ? 'ring-2 ring-blue-500' : 'ring-1 ring-gray-200'
+                    }`}
+                    aria-label={`View product image ${index + 1}`}
+                  >
+                    <Image
+                      src={image}
+                      alt={`Product view ${index + 1}`}
+                      fill
+                      className="object-cover"
+                      sizes="80px"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right Column - Product Info */}
+          <div className="col-span-12 lg:col-span-5">
+            <div className="sticky top-4 border border-gray-200 rounded-lg shadow-lg p-6">
+              <div className="mb-6">
+                {/* Price Display */}
+                <div className="space-y-4">
+                  <div className="flex items-baseline gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-3xl font-bold text-red-500">${product.price.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Key Benefits */}
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <Truck className="w-4 h-4 text-gray-500" /> 
+                    Free shipping on orders over $50
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <RefreshCw className="w-4 h-4 text-gray-500" /> 
+                    30-day return policy
+                  </div>
+                </div>
+
+                {/* Bid System */}
+                <div className="mt-6">
+                  <BidSystem
+                    productId={product.id}
+                    productTitle={product.title}
+                    askingPrice={product.price}
+                    sellerId={product.seller_id}
+                    currentUserId={isAuthenticated ? user?.id || '' : ''}
+                    isCurrentUserSeller={isAuthenticated && user?.id === product.seller_id}
+                    isLoggedIn={isAuthenticated}
+                    onShowLoginModal={() => showAuthModal('login')}
+                    onBidPlaced={handleBidPlaced}
+                    onCounterOfferMade={handleCounterOfferMade}
+                    onBidAccepted={handleBidAccepted}
+                    onBidRejected={handleBidRejected}
+                    existingBids={bids}
+                    counterOffers={counterOffers}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {/* Quantity Selector */}
                 <div>
-                  <div className="h-8 bg-gray-200 rounded w-3/4 mb-4"></div>
-                  <div className="h-6 bg-gray-200 rounded w-1/4 mb-6"></div>
-                  <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-2/3 mb-6"></div>
-                  <div className="h-12 bg-gray-200 rounded mb-4"></div>
-                  <div className="h-12 bg-gray-200 rounded mb-4"></div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Quantity
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                      aria-label="Decrease quantity"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <input
+                      type="number"
+                      value={quantity}
+                      onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-20 h-10 text-center border border-gray-300 rounded-lg"
+                      aria-label="Quantity"
+                    />
+                    <button
+                      onClick={() => setQuantity(quantity + 1)}
+                      className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                      aria-label="Increase quantity"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <button 
+                    onClick={handleAddToCart}
+                    className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <ShoppingBag className="w-5 h-5" />
+                    Add to Cart
+                  </button>
+                  <button 
+                    onClick={() => handleAuthRequiredAction('buy')}
+                    className="w-full py-3 bg-gray-800 text-white rounded-lg font-medium hover:bg-gray-900 transition-colors"
+                  >
+                    Buy Now
+                  </button>
+                  <button 
+                    onClick={() => handleAuthRequiredAction('message')}
+                    className="w-full py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Chat with Seller
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-center gap-4 text-sm text-gray-600">
+                  <div className="flex items-center gap-1">
+                    <Image src="/images/payment/paypal.png" alt="PayPal" width={48} height={20} />
+                    <Image src="/images/payment/klarna.png" alt="Klarna" width={48} height={20} />
+                  </div>
+                  <span>4 interest-free payments</span>
+                  <button className="text-gray-400">
+                    <HelpCircle className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Product content */}
-      {!loading && product && (
-        <div className="container-custom">
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="p-6 md:p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
-                {/* Left column - Images */}
-                <div>
-                  {/* Main Image */}
-                  <div className="relative aspect-square overflow-hidden rounded-lg mb-4 bg-gray-100">
-                    <div className="absolute inset-0 bg-gray-200 animate-pulse"></div>
-                    {/* Uncomment when you have actual images */}
-                    {/* <Image
-                      src={product.images[currentImageIndex]}
-                      alt={product.title}
-                      fill
-                      className="object-contain"
-                      priority
-                    /> */}
-                    
-                    {/* Navigation arrows */}
-                    <button 
-                      onClick={handlePrevImage}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 rounded-full flex items-center justify-center text-gray-800 hover:bg-white focus:outline-none z-10"
-                      aria-label="Previous image"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <button 
-                      onClick={handleNextImage}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 rounded-full flex items-center justify-center text-gray-800 hover:bg-white focus:outline-none z-10"
-                      aria-label="Next image"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
+        {/* Product Details Tabs */}
+        <div className="mt-12">
+          <div className="border-b border-gray-200 mb-6">
+            <div className="flex flex-wrap -mb-px">
+              <button
+                onClick={() => setSelectedTab('details')}
+                className={`mr-6 py-4 text-sm font-medium border-b-2 ${
+                  selectedTab === 'details' 
+                    ? 'border-blue-600 text-blue-600' 
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Details & Specs
+              </button>
+              <button
+                onClick={() => setSelectedTab('shipping')}
+                className={`mr-6 py-4 text-sm font-medium border-b-2 ${
+                  selectedTab === 'shipping' 
+                    ? 'border-blue-600 text-blue-600' 
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Shipping & Returns
+              </button>
+              <button
+                onClick={() => setSelectedTab('seller')}
+                className={`py-4 text-sm font-medium border-b-2 ${
+                  selectedTab === 'seller' 
+                    ? 'border-blue-600 text-blue-600' 
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                About the Seller
+              </button>
+            </div>
+          </div>
+          
+          {selectedTab === 'details' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-600">Condition:</span>
+                    <span className={`px-2 py-1 ${
+                      product.condition === 'new' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                    } text-sm font-medium rounded`}>
+                      {product.condition}
+                    </span>
                   </div>
-                  
-                  {/* Thumbnails */}
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    {product.images.map((image, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleImageChange(index)}
-                        className={`relative w-20 h-20 flex-shrink-0 rounded-md overflow-hidden border-2 ${
-                          index === currentImageIndex ? 'border-primary' : 'border-transparent'
-                        }`}
-                      >
-                        <div className="absolute inset-0 bg-gray-200 animate-pulse"></div>
-                        {/* Uncomment when you have actual images */}
-                        {/* <Image
-                          src={image}
-                          alt={`${product.title} - image ${index + 1}`}
-                          fill
-                          className="object-cover"
-                        /> */}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Right column - Product info */}
-                <div>
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{product.title}</h1>
-                      <div className="flex items-center mb-4">
-                        <div className="bg-gray-100 px-3 py-1 rounded-full text-sm font-medium text-gray-800 mr-2">
-                          {product.condition}
-                        </div>
-                        {product.isNew && (
-                          <div className="bg-green-100 px-3 py-1 rounded-full text-sm font-medium text-green-800">
-                            New
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleAuthRequiredAction('save')}
-                      aria-label={isSaved ? "Unsave product" : "Save product"}
-                      className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                        isSaved ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                      }`}
-                    >
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        className="h-5 w-5" 
-                        fill={isSaved ? "currentColor" : "none"} 
-                        viewBox="0 0 24 24" 
-                        stroke="currentColor"
-                        strokeWidth={isSaved ? 0 : 2}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </button>
-                  </div>
-                  
-                  <div className="mb-6">
-                    <div className="flex items-baseline">
-                      <span className="text-3xl font-bold text-gray-900">${product.price.toFixed(2)}</span>
-                      {product.originalPrice && (
-                        <span className="text-lg text-gray-500 line-through ml-2">${product.originalPrice.toFixed(2)}</span>
-                      )}
-                      {product.originalPrice && (
-                        <span className="ml-2 bg-red-100 text-red-800 text-sm font-medium px-2 py-0.5 rounded">
-                          {Math.round((1 - product.price / product.originalPrice) * 100)}% OFF
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Seller info */}
-                  <div className="flex items-center p-4 border border-gray-200 rounded-lg mb-6">
-                    <div className="relative w-12 h-12 rounded-full overflow-hidden mr-4">
-                      <div className="absolute inset-0 bg-gray-200 animate-pulse"></div>
-                      {/* Uncomment when you have actual images */}
-                      {/* <Image
-                        src={product.seller.avatar}
-                        alt={product.seller.name}
-                        fill
-                        className="object-cover"
-                      /> */}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center">
-                        <span className="font-medium text-gray-900">{product.seller.name}</span>
-                        {product.seller.verificationType && (
-                          <div className="ml-2">
-                            <VerifiedBadge 
-                              type={product.seller.verificationType as 'parent' | 'business'} 
-                              showLabel={true}
-                              size="sm"
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center text-sm text-gray-500 mt-1">
-                        <span>{product.seller.location}</span>
-                        <span className="mx-1">•</span>
-                        <span>{product.seller.totalSales}+ sales</span>
-                        <span className="mx-1">•</span>
-                        <span>{product.seller.responseRate}% response</span>
-                      </div>
-                    </div>
-                    <Link 
-                      href={`/seller/${product.seller.id}`}
-                      className="text-primary hover:text-primary-dark text-sm font-medium"
-                    >
-                      View profile
-                    </Link>
-                  </div>
-                  
-                  {/* Add the BidSystem component here, but only for parent sellers */}
-                  {product.seller.verificationType === 'parent' && (
-                    <div className="mb-6">
-                      <BidSystem
-                        productId={product.id}
-                        productTitle={product.title}
-                        askingPrice={product.price}
-                        sellerId={product.seller.id}
-                        currentUserId={user?.id || ''}
-                        isCurrentUserSeller={user?.id === product.seller.id}
-                        isLoggedIn={isAuthenticated}
-                        onShowLoginModal={() => showAuthModal('login', () => {
-                          // This function will be called after successful login
-                          console.log('User logged in, continuing with bid submission');
-                          // The user will need to submit the bid again after logging in
-                        })}
-                        onBidPlaced={handleBidPlaced}
-                        onCounterOfferMade={handleCounterOfferMade}
-                        onBidAccepted={handleBidAccepted}
-                        onBidRejected={handleBidRejected}
-                        existingBids={bids}
-                        counterOffers={counterOffers}
+                  {product.seller_description && (
+                    <div>
+                      <h3 className="font-medium mb-2">Product Details</h3>
+                      <div 
+                        className="prose max-w-none"
+                        dangerouslySetInnerHTML={{ __html: product.seller_description }}
                       />
                     </div>
                   )}
-                  
-                  {/* Purchase options */}
-                  <div className="mb-6">
-                    <div className="flex items-center mb-4">
-                      <label htmlFor="quantity" className="text-sm font-medium text-gray-700 mr-4">Quantity:</label>
-                      <div className="relative inline-flex">
-                        <button
-                          type="button"
-                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          className="p-2 border border-gray-300 bg-gray-50 text-gray-500 rounded-l-md hover:bg-gray-100"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                          </svg>
-                        </button>
-                        <input
-                          type="number"
-                          id="quantity"
-                          min="1"
-                          value={quantity}
-                          onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                          className="w-16 text-center border-y border-gray-300 py-2 focus:ring-primary focus:border-primary"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setQuantity(quantity + 1)}
-                          className="p-2 border border-gray-300 bg-gray-50 text-gray-500 rounded-r-md hover:bg-gray-100"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
+                </div>
+              </div>
+              
+              {product.description && (
+                <div className="prose max-w-none">
+                  <h3 className="font-medium mb-2">Description</h3>
+                  <p className="whitespace-pre-wrap">{product.description}</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {selectedTab === 'shipping' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-medium mb-4">Shipping Options</h3>
+                <div className="space-y-4">
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">Standard Shipping</p>
+                        <p className="text-sm text-gray-600">Estimated Delivery: 5-7 business days</p>
                       </div>
+                      <p className="font-medium">$5.99</p>
                     </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <button
-                        onClick={() => handleAuthRequiredAction('buy')}
-                        className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors"
-                      >
-                        Buy Now
-                      </button>
-                      <button
-                        onClick={() => handleAuthRequiredAction('cart')}
-                        className="w-full px-6 py-3 border border-primary text-primary rounded-lg hover:bg-primary-light/10 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors"
-                      >
-                        Add to Cart
-                      </button>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">Express Shipping</p>
+                        <p className="text-sm text-gray-600">Estimated Delivery: 2-3 business days</p>
+                      </div>
+                      <p className="font-medium">$12.99</p>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Product details and description - Tabbed */}
-      <div className="container-custom mt-8">
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="border-b border-gray-200">
-            <nav className="flex -mb-px">
-              <button className="py-4 px-6 border-b-2 border-primary text-primary font-medium">
-                Details & Description
-              </button>
-              <button className="py-4 px-6 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">
-                Shipping & Returns
-              </button>
-              <button className="py-4 px-6 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium">
-                Seller Information
-              </button>
-            </nav>
-          </div>
-          
-          <div className="p-6 md:p-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Left - Product specs */}
-              <div>
-                <h3 className="text-lg font-bold mb-4">Product Specifications</h3>
-                <dl className="space-y-3">
-                  {Object.entries(product.details).map(([key, value]) => (
-                    <div key={key} className="grid grid-cols-2 gap-4">
-                      <dt className="text-gray-600 font-medium">{key}</dt>
-                      <dd>{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
               
-              {/* Right - Description */}
-              <div className="md:col-span-2">
-                <h3 className="text-lg font-bold mb-4">Description</h3>
-                <div className="prose max-w-none">
-                  {product.description.split('\n\n').map((paragraph, index) => (
-                    <p key={index} className="mb-4">{paragraph}</p>
-                  ))}
+              <div>
+                <h3 className="font-medium mb-4">Returns & Exchanges</h3>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <p className="text-gray-700">
+                    Returns accepted within 30 days if unused and in original packaging. Buyer pays return shipping.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {selectedTab === 'seller' && product.seller && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-100">
+                      <Image
+                        src={product.seller.avatar_url || '/images/default-avatar.png'}
+                        alt={product.seller.name}
+                        width={64}
+                        height={64}
+                        className="object-cover"
+                      />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-lg">{product.seller.name}</h3>
+                      <p className="text-gray-600 text-sm">{product.seller.business_type}</p>
+                    </div>
+                  </div>
                 </div>
                 
-                {/* Authentication note */}
-                <div className="mt-8 bg-gray-50 rounded-lg p-4 flex items-start">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                  </svg>
-                  <div>
-                    <h4 className="font-medium text-gray-900">Authentication Guarantee</h4>
-                    <p className="text-sm text-gray-600 mt-1">
-                      This item has been verified by our expert team for authenticity. It includes original documentation and comes with our marketplace guarantee.
+                <div>
+                  <h3 className="font-medium mb-4">Seller Verification</h3>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <VerifiedBadge 
+                        type={product.seller.business_type}
+                        showLabel={true}
+                        size="md"
+                        enrollmentDate={product.seller.created_at}
+                      />
+                    </div>
+                    
+                    <p className="text-sm text-gray-700">
+                      {product.seller.business_type === 'business' 
+                        ? 'This seller is a verified business with proper credentials and documentation. Business sellers maintain high-quality standards and professional services.'
+                        : 'This seller is a verified parent with a focus on creating quality products for children and families. Parent sellers prioritize safety, quality, and thoughtful design in their products.'
+                      }
                     </p>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
+
+        {/* Related Products */}
+        {relatedProducts.length > 0 && (
+          <ProductSlider 
+            title="You may also like"
+            products={relatedProducts}
+            showPrice={true}
+          />
+        )}
+
+        {/* Add the new sections after the product details */}
+        {!loading && product && (
+          <>
+            {/* Frequently Bought Together Section */}
+            {frequentlyBoughtTogether.length > 0 && (
+              <FrequentlyBoughtTogether
+                mainProduct={product}
+                relatedProducts={frequentlyBoughtTogether}
+              />
+            )}
+
+            {/* More from Seller Section */}
+            {moreFromSeller.length > 0 && (
+              <ProductSlider
+                title={`More from ${product.seller?.name}`}
+                subtitle="Browse more items from this seller"
+                products={moreFromSeller}
+                onProductSelect={handleProductSelect}
+                selectedProducts={selectedProducts}
+                showPrice={true}
+                showQuantity={true}
+              />
+            )}
+          </>
+        )}
       </div>
-      
-      {/* Related products */}
-      <div className="container-custom mt-8">
-        <h2 className="text-2xl font-bold mb-6">You May Also Like</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {product.relatedProducts.map((relatedProduct) => (
-            <motion.div
-              key={relatedProduct.id}
-              whileHover={{ y: -5 }}
-              transition={{ duration: 0.3 }}
-              className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md border border-gray-100"
-            >
-              <Link href={`/product/${relatedProduct.id}`}>
-                <div className="relative aspect-square bg-gray-100">
-                  <div className="absolute inset-0 bg-gray-200 animate-pulse"></div>
-                  {/* Uncomment when you have actual images */}
-                  {/* <Image
-                    src={relatedProduct.image}
-                    alt={relatedProduct.title}
-                    fill
-                    className="object-cover"
-                  /> */}
-                  
-                  <div className="absolute bottom-2 left-2">
-                    <span className="bg-white text-gray-800 text-xs font-medium px-2 py-1 rounded">
-                      {relatedProduct.condition}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="p-4">
-                  <h3 className="text-gray-800 font-medium text-lg mb-1 line-clamp-1">{relatedProduct.title}</h3>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-900 font-bold">${relatedProduct.price.toFixed(2)}</span>
-                    <button 
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleAuthRequiredAction('save');
-                      }}
-                      className="text-primary hover:text-primary-dark focus:outline-none"
-                    >
-                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-      
-      {/* Marketplace link banner */}
-      <div className="container-custom mt-8">
-        <div className="bg-gradient-to-r from-primary to-primary-dark rounded-xl p-6 text-white">
-          <div className="flex flex-col md:flex-row items-center justify-between">
-            <div className="flex items-center mb-4 md:mb-0">
-              <div className="relative w-12 h-12 rounded-full overflow-hidden bg-white mr-4">
-                <div className="absolute inset-0 bg-gray-200 animate-pulse"></div>
-                {/* Uncomment when you have actual images */}
-                {/* <Image
-                  src={product.marketplace.logo}
-                  alt={product.marketplace.name}
-                  fill
-                  className="object-cover"
-                /> */}
-              </div>
-              <div>
-                <p className="text-white/80 text-sm">This item is from</p>
-                <h3 className="text-xl font-bold">{product.marketplace.name}</h3>
-              </div>
-            </div>
-            <Link href={`/marketplace/${product.marketplace.id}`} className="px-6 py-3 bg-white text-primary font-semibold rounded-lg hover:bg-gray-100 shadow-md">
-              Visit Marketplace
-            </Link>
-          </div>
-        </div>
-      </div>
-    </main>
+
+      {/* Add the confirmation modal */}
+      {showAddedToCartConfirmation && (
+        <CartAddedConfirmation
+          products={[product]}
+          onClose={() => setShowAddedToCartConfirmation(false)}
+          onViewCart={() => {
+            setShowAddedToCartConfirmation(false);
+            router.push('/cart');
+          }}
+        />
+      )}
+    </div>
   );
-} 
+}

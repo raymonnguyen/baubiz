@@ -481,6 +481,17 @@ export default function MarketplacePage() {
   const [sortOption, setSortOption] = useState('featured');
   const [currentView, setCurrentView] = useState<'shop' | 'about' | 'reviews'>('shop');
   
+  // State for marketplace data and loading
+  const [marketplace, setMarketplace] = useState<Marketplace | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 0,
+    totalCount: 0,
+    hasMore: false
+  });
+  
   // Determine the current view based on the URL parameter
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -504,12 +515,173 @@ export default function MarketplacePage() {
     router.push(`${pathname}?${newParams.toString()}`);
   };
   
-  // This would fetch the actual marketplace data in a real app
-  // const { data: marketplace, isLoading } = useMarketplace(params.id);
+  // Fetch marketplace data
+  useEffect(() => {
+    const fetchMarketplaceData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Get the slug from params.id
+        const slug = params.id;
+        
+        // Fetch marketplace data
+        const marketResponse = await fetch(`/api/markets/${slug}`);
+        
+        if (!marketResponse.ok) {
+          throw new Error('Failed to fetch marketplace data');
+        }
+        
+        const marketData = await marketResponse.json();
+        
+        // Transform data to match our interface
+        const transformedMarketplace: Marketplace = {
+          id: marketData.id,
+          name: marketData.name,
+          description: marketData.description,
+          longDescription: marketData.long_description || '',
+          establishedDate: marketData.established_date || new Date().toISOString(),
+          logo: marketData.logo_url || '/images/marketplaces/default-logo.png',
+          banner: marketData.banner_url || '/images/marketplaces/default-banner.jpg',
+          members: marketData.stats?.sellerCount?.toString() || '0',
+          listings: marketData.stats?.productCount?.toString() || '0',
+          followers: '0', // This might need to be added to the API
+          owner: {
+            id: marketData.owner_id,
+            name: '', // We need to fetch this separately or add to API
+            avatar: '',
+            joinedDate: marketData.created_at,
+            location: '',
+            bio: '',
+            totalSales: 0,
+            responseRate: 0,
+            responseTime: '',
+            lastActive: '',
+            lat: 0,
+            lng: 0
+          },
+          sellers: [], // This would need to be fetched separately
+          categories: marketData.categories?.map((cat: any) => cat.name) || [],
+          socialLinks: marketData.social_links || {
+            instagram: '',
+            twitter: '',
+            website: ''
+          },
+          policies: marketData.policies || {
+            shipping: { title: 'Shipping', content: '' },
+            returns: { title: 'Returns & Exchanges', content: '' },
+            payments: { title: 'Payment Methods', content: '' }
+          },
+          faqs: marketData.faqs?.map((faq: any) => ({
+            question: faq.question,
+            answer: faq.answer
+          })) || []
+        };
+        
+        setMarketplace(transformedMarketplace);
+        
+        // Fetch products for this marketplace
+        const productsResponse = await fetch(`/api/markets/${slug}/products?page=1&limit=20`);
+        
+        if (!productsResponse.ok) {
+          throw new Error('Failed to fetch marketplace products');
+        }
+        
+        const productsData = await productsResponse.json();
+        
+        // Transform product data to match our interface
+        const transformedProducts: Product[] = productsData.products.map((product: any) => ({
+          id: product.id,
+          title: product.title,
+          price: product.price,
+          originalPrice: product.originalPrice || null,
+          image: product.images[0],
+          isFeatured: product.status === 'featured',
+          condition: product.condition,
+          isNew: product.condition === 'new',
+          sellerId: product.seller_id,
+          sellerName: product.seller.name,
+          sellerVerificationType: product.seller.business_type as 'parent' | 'business' | undefined
+        }));
+        
+        setProducts(transformedProducts);
+        setPagination(productsData.pagination);
+      } catch (error) {
+        console.error('Error fetching marketplace data:', error);
+        // In case of error, use sample data (optional, could show error instead)
+        setMarketplace(sampleMarketplace);
+        setProducts(sampleProducts);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchMarketplaceData();
+  }, [params.id]);
   
-  // Using sample data for now
-  const marketplace: Marketplace = sampleMarketplace;
-  const products = sampleProducts;
+  // Function to handle page changes
+  const handlePageChange = async (page: number) => {
+    try {
+      setIsLoading(true);
+      
+      // Get the slug from params.id
+      const slug = params.id;
+      
+      // Construct the API URL with sorting params if needed
+      let apiUrl = `/api/markets/${slug}/products?page=${page}&limit=20`;
+      
+      // Add sorting parameters
+      if (sortOption === 'price-low') {
+        apiUrl += '&sortBy=price&sortOrder=asc';
+      } else if (sortOption === 'price-high') {
+        apiUrl += '&sortBy=price&sortOrder=desc';
+      } else if (sortOption === 'newest') {
+        apiUrl += '&sortBy=created_at&sortOrder=desc';
+      }
+      
+      const response = await fetch(apiUrl);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch products');
+      }
+      
+      const data = await response.json();
+      
+      // Transform product data
+      const transformedProducts: Product[] = data.products.map((product: any) => ({
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        originalPrice: product.originalPrice || null,
+        image: product.images[0],
+        isFeatured: product.status === 'featured',
+        condition: product.condition,
+        isNew: product.condition === 'new',
+        sellerId: product.seller_id,
+        sellerName: product.seller.name,
+        sellerVerificationType: product.seller.business_type as 'parent' | 'business' | undefined
+      }));
+      
+      setProducts(transformedProducts);
+      setPagination(data.pagination);
+      
+      // Scroll to top of products section
+      window.scrollTo({
+        top: document.querySelector('.product-list-section')?.getBoundingClientRect().top as number + window.scrollY - 100,
+        behavior: 'smooth',
+      });
+    } catch (error) {
+      console.error('Error fetching page data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Handle sort change
+  const handleSortChange = (newSortOption: string) => {
+    setSortOption(newSortOption);
+    // Reset to page 1 when sort changes and fetch new data
+    handlePageChange(1);
+  };
   
   // Get featured products
   const featuredProducts = products.filter(product => product.isFeatured);
@@ -529,6 +701,46 @@ export default function MarketplacePage() {
         return nonFeaturedProducts;
     }
   };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <main>
+        <div className="h-64 bg-gray-200 animate-pulse"></div>
+        <div className="container-custom py-8">
+          <div className="h-8 bg-gray-200 animate-pulse w-1/3 mb-4"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[...Array(8)].map((_, index) => (
+              <div key={index} className="bg-white rounded-lg overflow-hidden shadow-sm border border-gray-100">
+                <div className="h-64 bg-gray-300 animate-pulse"></div>
+                <div className="p-4">
+                  <div className="h-6 bg-gray-200 animate-pulse w-3/4 mb-2"></div>
+                  <div className="h-4 bg-gray-200 animate-pulse w-1/2"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Error state
+  if (!marketplace) {
+    return (
+      <main>
+        <div className="container-custom py-16">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Marketplace Not Found</h2>
+            <p className="text-gray-600 mb-6">We couldn't find the marketplace you're looking for.</p>
+            <Link href="/marketplaces" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              Browse Marketplaces
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   // Calculate review stats for the reviews component
   const overallRating = sampleReviews.reduce((sum, review) => sum + review.rating, 0) / sampleReviews.length;
@@ -567,7 +779,7 @@ export default function MarketplacePage() {
           )}
           
           {/* All Products Section */}
-          <section className="py-12 bg-gray-50">
+          <section className="py-12 bg-gray-50 product-list-section">
             <div className="container-custom">
               <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold">All Items</h2>
@@ -577,7 +789,7 @@ export default function MarketplacePage() {
                     id="sort"
                     className="bg-white border border-gray-300 text-gray-700 py-2 px-3 pr-8 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     value={sortOption}
-                    onChange={(e) => setSortOption(e.target.value)}
+                    onChange={(e) => handleSortChange(e.target.value)}
                   >
                     <option value="featured">Featured</option>
                     <option value="newest">Newest</option>
@@ -587,11 +799,58 @@ export default function MarketplacePage() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {getSortedProducts().map(product => (
-                  <ProductCard key={product.id} product={product} />
-                ))}
-              </div>
+              {/* Products grid */}
+              {isLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {[...Array(8)].map((_, index) => (
+                    <div key={index} className="bg-white rounded-lg overflow-hidden shadow-sm border border-gray-100">
+                      <div className="h-64 bg-gray-300 animate-pulse"></div>
+                      <div className="p-4">
+                        <div className="h-6 bg-gray-200 animate-pulse w-3/4 mb-2"></div>
+                        <div className="h-4 bg-gray-200 animate-pulse w-1/2"></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {getSortedProducts().map(product => (
+                    <ProductCard key={product.id} product={product} />
+                  ))}
+                </div>
+              )}
+              
+              {/* No products message */}
+              {!isLoading && products.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 mb-4">No products found in this marketplace yet.</p>
+                  <Link href="/marketplace" className="text-blue-600 hover:underline">
+                    Browse other marketplaces
+                  </Link>
+                </div>
+              )}
+              
+              {/* Pagination */}
+              {pagination.totalPages > 1 && (
+                <div className="flex justify-center mt-8">
+                  <nav className="inline-flex" role="navigation" aria-label="Pagination Navigation">
+                    {Array.from({ length: pagination.totalPages }).map((_, index) => (
+                      <button
+                        key={index}
+                        className={`px-3 py-1 mx-1 rounded ${
+                          pagination.currentPage === index + 1
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white border border-gray-300 hover:bg-gray-50'
+                        }`}
+                        onClick={() => handlePageChange(index + 1)}
+                        disabled={isLoading}
+                      >
+                        {index + 1}
+                      </button>
+                    ))}
+                  </nav>
+                </div>
+              )}
             </div>
           </section>
           
@@ -672,15 +931,18 @@ function ProductCard({ product }: { product: Product }) {
     <div className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-100">
       <Link href={`/product/${product.id}`}>
         <div className="relative h-64 bg-gray-200">
-          {/* Placeholder for product image */}
-          <div className="absolute inset-0 bg-gray-300 animate-pulse"></div>
-          {/* Uncomment when you have actual images */}
-          {/* <Image 
-            src={product.image}
-            alt={product.title}
-            fill
-            className="object-cover"
-          /> */}
+          {product.image ? (
+            <Image 
+              src={product.image}
+              alt={product.title}
+              fill
+              className="object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
+              <span className="text-gray-500">No image</span>
+            </div>
+          )}
           
           {/* Badges */}
           <div className="absolute top-2 left-2 flex flex-col gap-1">

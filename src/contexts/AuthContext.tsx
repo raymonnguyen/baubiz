@@ -36,57 +36,175 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authModalVisible, setAuthModalVisible] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('signup');
   const [authModalActionAfterAuth, setAuthModalActionAfterAuth] = useState<(() => void) | undefined>(undefined);
-  const [session, setSession] = useState<Session | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const router = useRouter();
 
-  // Initial session and auth state handling
+  // Initialize authentication state with strong persistence
   useEffect(() => {
     const initializeAuth = async () => {
-      setIsLoading(true);
-      
-      // Get current session
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      
-      if (session?.user) {
-        // Convert Supabase user to our app's user format
-        const userData: AuthUser = {
-          id: session.user.id,
-          email: session.user.email || '',
-          name: session.user.user_metadata?.name || 'User',
-          username: session.user.user_metadata?.username || '',
-          avatar: session.user.user_metadata?.avatar_url || '',
-        };
-        setUser(userData);
-      }
-      
-      setIsLoading(false);
-      
-      // Set up auth state change listener
-      const { data: { subscription } } = await supabase.auth.onAuthStateChange(
-        (_event, currentSession) => {
-          setSession(currentSession);
-          
-          if (currentSession?.user) {
-            const userData: AuthUser = {
-              id: currentSession.user.id,
-              email: currentSession.user.email || '',
-              name: currentSession.user.user_metadata?.name || 'User',
-              username: currentSession.user.user_metadata?.username || '',
-              avatar: currentSession.user.user_metadata?.avatar_url || '',
-            };
-            setUser(userData);
-          } else {
-            setUser(null);
-          }
+      try {
+        setIsLoading(true);
+        
+        // Check for direct token in cookies or localStorage first
+        const cookieToken = getCookie('supabase-auth-token');
+        const localStorageToken = localStorage.getItem('supabase-auth-token');
+        
+        if (cookieToken || localStorageToken) {
+          console.log('Found existing token, attempting to restore session');
         }
-      );
-      
-      // Clean up subscription on unmount
-      return () => {
-        subscription.unsubscribe();
-      };
+        
+        // Get the current session
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Session retrieval error:', error);
+          
+          // Try to refresh the session
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          
+          if (refreshError) {
+            console.error('Session refresh error:', refreshError);
+            
+            // Try to restore session from token if we have one
+            if (cookieToken || localStorageToken) {
+              try {
+                const token = cookieToken || localStorageToken;
+                const { data: tokenData, error: tokenError } = await supabase.auth.setSession({
+                  access_token: token!,
+                  refresh_token: '',
+                });
+                
+                if (tokenError) {
+                  console.error('Token restoration error:', tokenError);
+                  handleAuthFailure();
+                } else if (tokenData.session) {
+                  console.log('Session restored from token');
+                  handleSessionUser(tokenData.session.user);
+                }
+              } catch (e) {
+                console.error('Token restoration exception:', e);
+                handleAuthFailure();
+              }
+            } else {
+              handleAuthFailure();
+            }
+          } else if (refreshData.session) {
+            // Session refreshed successfully
+            handleSessionUser(refreshData.session.user);
+            
+            // Save the refreshed token for backup
+            if (refreshData.session.access_token) {
+              localStorage.setItem('supabase-auth-token', refreshData.session.access_token);
+              setCookie('supabase-auth-token', refreshData.session.access_token, 7);
+            }
+          } else {
+            handleAuthFailure();
+          }
+        } else if (data.session) {
+          // We have a valid session
+          handleSessionUser(data.session.user);
+          
+          // Save the token for backup
+          if (data.session.access_token) {
+            localStorage.setItem('supabase-auth-token', data.session.access_token);
+            setCookie('supabase-auth-token', data.session.access_token, 7);
+          }
+        } else {
+          handleAuthFailure();
+        }
+        
+        // Set up auth state change listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event, currentSession) => {
+            console.log(`Auth state change: ${event}`);
+            
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+              if (currentSession?.user) {
+                handleSessionUser(currentSession.user);
+                
+                // Save the token for backup
+                if (currentSession.access_token) {
+                  localStorage.setItem('supabase-auth-token', currentSession.access_token);
+                  setCookie('supabase-auth-token', currentSession.access_token, 7);
+                }
+                
+                // Dispatch login success event
+                window.dispatchEvent(new CustomEvent('auth:login:success'));
+              }
+            } else if (event === 'SIGNED_OUT') {
+              handleAuthFailure();
+              // Dispatch logout event
+              window.dispatchEvent(new CustomEvent('auth:logout'));
+            } else if (event === 'USER_UPDATED') {
+              if (currentSession?.user) {
+                handleSessionUser(currentSession.user);
+              }
+            }
+          }
+        );
+        
+        // Clean up subscription on unmount
+        return () => {
+          subscription.unsubscribe();
+        };
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+        handleAuthFailure();
+      } finally {
+        setIsLoading(false);
+      }
     };
+    
+    // Handle authentication failure
+    const handleAuthFailure = () => {
+      setUser(null);
+      setIsAuthenticated(false);
+      localStorage.removeItem('supabase-auth-token');
+      deleteCookie('supabase-auth-token');
+    };
+    
+    // Helper function to process user from session
+    const handleSessionUser = (sessionUser: any) => {
+      if (!sessionUser) return;
+      
+      // Transform to match our user interface
+      const userData: AuthUser = {
+        id: sessionUser.id,
+        email: sessionUser.email || '',
+        name: sessionUser.user_metadata?.name || 'User',
+        username: sessionUser.user_metadata?.username || '',
+        avatar: sessionUser.user_metadata?.avatar_url || '',
+      };
+      
+      setUser(userData);
+      setIsAuthenticated(true);
+    };
+    
+    // Cookie helpers
+    function setCookie(name: string, value: string, days: number) {
+      let expires = '';
+      if (days) {
+        const date = new Date();
+        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        expires = '; expires=' + date.toUTCString();
+      }
+      document.cookie = name + '=' + value + expires + '; path=/; SameSite=Lax';
+    }
+    
+    function getCookie(name: string) {
+      const nameEQ = name + '=';
+      const ca = document.cookie.split(';');
+      for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+      }
+      return null;
+    }
+    
+    function deleteCookie(name: string) {
+      document.cookie = name + '=; Max-Age=-99999999; path=/';
+    }
     
     initializeAuth();
   }, []);
@@ -94,22 +212,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Login with email and password
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      // Handle the special case for demo user
-      if (email === 'phunguyen' && password === 'phunguyen') {
-        // Use the special username as email for the demo
-        email = 'phunguyen@example.com';
-        password = 'phunguyen123'; // Ensure this matches what's in your Supabase
-      }
+      setIsLoading(true);
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password,
+        password
       });
       
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       
       // Show success toast
       toast.success('Successfully logged in!');
+      
+      // Dispatch login success event
+      window.dispatchEvent(new CustomEvent('auth:login:success'));
       
       // Perform actions after successful login
       if (authModalActionAfterAuth) {
@@ -118,9 +236,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       return true;
     } catch (error: any) {
-      console.error('Login error:', error);
+      console.error('Login error:', error.message);
       toast.error(error.message || 'Failed to log in. Please try again.');
-      throw error;
+      return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -141,7 +261,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
       
       toast.success('Account created! Please check your email to confirm your account.');
-      // Supabase sends a confirmation email by default
     } catch (error: any) {
       console.error('Signup error:', error);
       toast.error(error.message || 'Failed to sign up. Please try again.');
@@ -152,50 +271,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Logout
   const logout = async (): Promise<void> => {
     try {
+      setIsLoading(true);
+      
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
       
-      toast.success('You have been logged out');
+      if (error) {
+        throw error;
+      }
       
-      // Redirect to home page after logout
+      // Clear authentication state
+      setUser(null);
+      setIsAuthenticated(false);
+      
+      // Dispatch logout event
+      window.dispatchEvent(new CustomEvent('auth:logout'));
+      
+      toast.success('Successfully logged out!');
       router.push('/');
     } catch (error: any) {
       console.error('Logout error:', error);
       toast.error(error.message || 'Failed to log out. Please try again.');
-      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Show auth modal
   const showAuthModal = (mode: 'login' | 'signup' = 'signup', actionAfterAuth?: () => void) => {
     setAuthModalMode(mode);
+    setAuthModalActionAfterAuth(actionAfterAuth);
     setAuthModalVisible(true);
-    if (actionAfterAuth) {
-      setAuthModalActionAfterAuth(actionAfterAuth);
-    }
   };
 
-  // Hide auth modal
   const hideAuthModal = () => {
     setAuthModalVisible(false);
-    // Clear the action after auth when closing the modal
-    setAuthModalActionAfterAuth(undefined);
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated: !!user,
+        isAuthenticated,
         isLoading,
         login,
-        logout,
         signup,
+        logout,
         showAuthModal,
         hideAuthModal,
         authModalVisible,
         authModalMode,
-        authModalActionAfterAuth
+        authModalActionAfterAuth,
       }}
     >
       {children}
